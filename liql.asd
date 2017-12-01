@@ -7,7 +7,9 @@
   :depends-on (#:gadgets
                #:cl-hash-util
                #:sql-stuff
-               #:alexandria)
+               #:alexandria
+               #:cl-ascii-table
+               #:split-sequence)
   :serial t
   :components ((:file "package")
                (:file "liql")))
