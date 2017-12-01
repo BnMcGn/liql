@@ -47,7 +47,7 @@
          (%%normalize-liql remainder (cons clause results))))
       ((quoted-symbol-p sp)
        (%%normalize-liql (cdr specifiers)
-                         (list* :designator (quoted-symbol-p sp) results)))
+                         (list* sp :designator results)))
       ((listp sp)
        (%%normalize-liql (cdr specifiers)
                          (cons (%%normalize-liql-function (car sp) (cdr sp)) results)))
@@ -58,12 +58,8 @@
 (defun %%normalize-liql-function (name data) (error "Not implemented"))
 
 (defun %%parse-liql (specifiers)
-  (declare (ignore specifiers))
   `(funcall (or *liql-finisher* (symbol-function 'summarize-core))
-            :database (get-current-database)
-            :table nil
-            :column nil
-            :query nil))
+            (%build-liql-query (list ,@(%%normalize-liql specifiers)))))
 
 (defun %build-liql-query (normalized-liql)
   (labels ((proc (liql database table/col query input)
@@ -108,12 +104,29 @@
   `(let ((*liql-finisher* #'summarize-core))
      ,@liql-expression))
 
-(defun summarize-core (&key database table column query)
+(defun summarize-core (query)
   (if query
-      (summarize-query query table column)
-      (summarize-database database)))
+      (summarize-query query)
+      (summarize-database (get-current-database))))
 
-(defun summarize-query (query))
+(defun summarize-query (query)
+  (multiple-value-bind (results cols) (funcall query)
+    (let ((display (ascii-table:make-table cols)))
+      (if (<= 10 (length results))
+          (dolist (row results)
+            (ascii-table:add-row display row))
+          (progn
+            (loop for i from 1 to 3
+               for row in results
+               do (ascii-table:add-row display row))
+            (ascii-table:add-row
+             display
+             (mapcar (lambda (x) (declare (ignore x)) "...") cols))
+            (dolist (row (last results 3))
+              (ascii-table:add-row display row))))
+      (princ "Results:")
+      (terpri)
+      (ascii-table:display display))))
 
 ;;FIXME: Could also show a list of available DBs.
 (defun summarize-database (database)
@@ -123,6 +136,7 @@
     (dolist (tablname (clsql:list-tables))
       (format t "~&   ~a" tablname))))
 
+;;FIXME: mechanism for listing all dbs not available yet
 (defun summarize-all ())
 
 (define-condition ambiguous-symbol (error)
