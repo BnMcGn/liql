@@ -28,15 +28,81 @@
     *last-column* nil
   "Bookmark of the last referenced column.")
 
+(defparameter *fetch-column-only* nil)
 
 
+(defun get-current-database ()
+  "Currently, this function returns a clsql database object."
+  (or *last-database*
+      clsql:*default-database*))
 
+(defun %%normalize-liql (specifiers &optional results)
+  "Normalize-liql is the preprocessor for liql. It should return a plist."
+  (let ((sp (car specifiers)))
+    (cond
+      ((null sp) (nreverse results))
+      ((keywordp sp)
+       (multiple-value-bind (clause remainder)
+           (%%normalize-liql-keyword sp (cdr specifiers))
+         (%%normalize-liql remainder (cons clause results))))
+      ((quoted-symbol-p sp)
+       (%%normalize-liql (cdr specifiers)
+                         (list* :designator (quoted-symbol-p sp) results)))
+      ((listp sp)
+       (%%normalize-liql (cdr specifiers)
+                         (cons (%%normalize-liql-function (car sp) (cdr sp)) results)))
+      (t (error "Don't handle that yet!"))
+       )))
 
+(defun %%normalize-liql-keyword (kw remainder) (error "Not implemented"))
+(defun %%normalize-liql-function (name data) (error "Not implemented"))
 
+(defun %%parse-liql (specifiers)
+  (declare (ignore specifiers))
+  `(funcall (or *liql-finisher* (symbol-function 'summarize-core))
+            :database (get-current-database)
+            :table nil
+            :column nil
+            :query nil))
+
+(defun %build-liql-query (normalized-liql)
+  (labels ((proc (liql database table/col query input)
+             (if liql
+                 (case (car liql)
+                   (:input
+                    (when (or table/col query input)
+                      (error "Input should be first in chain!")) ;Might have meaning later?
+                    (proc (cddr liql) database nil nil (second liql)))
+                   (:designator
+                    (if table/col
+                        (error "Not implemented1")
+                        (let ((desg (get-table-or-column-object (second liql))))
+                          (proc (cddr liql) database desg nil input))))
+                   (otherwise (error "Not implemented2")))
+                 ;; Process endstate:
+                 (if table/col
+                     (if query
+                         (error "Not implemented3")
+                         (if input
+                             (lambda ()
+                               (clsql:select
+                                (if *fetch-column-only*
+                                    (ensure-column table/col)
+                                    (sql-stuff:colm '*))
+                                :from (ensure-table table/col)
+                                :where
+                                (sql-stuff:in-or-equal (ensure-column table/col) input)))
+                             (lambda ()
+                               (clsql:select
+                                (if *fetch-column-only*
+                                    (ensure-column table/col)
+                                    (sql-stuff:colm '*))
+                                :from (ensure-table table/col)))))
+                     (error "Not implemented4")))))
+    (proc normalized-liql (get-current-database) nil nil nil)))
 
 (defmacro liql (&rest specifiers)
-  (parse-liql specifiers))
-
+  (%%parse-liql specifiers))
 
 (defmacro summarize (liql-expression)
   `(let ((*liql-finisher* #'summarize-core))
@@ -46,3 +112,61 @@
   (if query
       (summarize-query query table column)
       (summarize-database database)))
+
+(defun summarize-query (query))
+
+;;FIXME: Could also show a list of available DBs.
+(defun summarize-database (database)
+  (let ((clsql:*default-database* database))
+    (format t "Database ~a" (clsql:database-name database))
+    (format t "~&Tables:")
+    (dolist (tablname (clsql:list-tables))
+      (format t "~&   ~a" tablname))))
+
+(defun summarize-all ())
+
+(define-condition ambiguous-symbol (error)
+  ((options :initarg :options :reader options)
+   (text :initarg :text :reader text)))
+
+(defun splittable (symbol)
+  (let ((res (find #\. (mkstr symbol))))
+    (when (< 1 (length res))
+      (sql-stuff:colm (car res) (second res)))))
+
+(defun get-table-or-column-object (item)
+  (if (or (stringp item) (symbolp item))
+      (or (splittable item)
+          (when-let ((table (first-match
+                             (lambda (x) (string-equal-caseless x item))
+                             (clsql-sys:database-list-tables (get-current-database)))))
+            (sql-stuff:colm table))
+          (let ((cols
+                 (collecting
+                     (dolist (tname (clsql-sys:database-list-tables (get-current-database)))
+                       (dolist (cname (sql-stuff:get-table-columns tname))
+                         (when (string-equal-caseless cname item)
+                           (collect (cons tname cname))))))))
+            (if (< 1 (length cols))
+                (error 'ambiguous-symbol :text "Multiple matching columns found"
+                       :options cols)
+                (sql-stuff:colm (caar cols) (cdar cols))))
+          (error "No matching database item found"))
+      item))
+
+(defun column-p (t-or-c)
+  (eq 'clsql-sys:sql-ident-table (type-of t-or-c)))
+
+(defun ensure-column (t-or-c)
+  "Returns an ident attribute that contains a table and a column. Given just a table, will fill with the table's pkey."
+  (if (eq 'clsql-sys:sql-ident-table (type-of t-or-c))
+      (multiple-value-bind (pkey sig) (sql-stuff:get-table-pkey t-or-c)
+        (unless sig
+          (error "Couldn't get PKey column for table specifier"))
+        (sql-stuff:colm (sql-stuff:table-symbol t-or-c) (intern pkey 'keyword)))
+      t-or-c))
+
+(defun ensure-table (t-or-c)
+  (if (eq 'clsql-sys:sql-ident-table (type-of t-or-c))
+      t-or-c
+      (sql-stuff:tabl (sql-stuff:table-symbol t-or-c))))

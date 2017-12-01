@@ -1,5 +1,8 @@
 ;;;; package.lisp
 
 (defpackage #:liql
-  (:use #:cl))
+  (:use #:cl #:gadgets #:alexandria)
+  (:export
+   #:summarize
+   #:liql))
 
