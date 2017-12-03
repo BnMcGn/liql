@@ -63,6 +63,19 @@
   `(funcall (or *liql-finisher* (symbol-function 'summarize-core))
             (%build-liql-query (list ,@(%%normalize-liql specifiers)))))
 
+(defun %add-table-to-query-chain (table colspec query input &key final)
+  (and query input (error "Query and input parameters should not both be set."))
+  (let ((where
+         (cond
+           (query (clsql:sql-in query))
+           (input (sql-stuff:in-or-equal (ensure-column table) input))
+           (t nil)))
+        (columns (if (and final (not *fetch-column-only*))
+                     (sql-stuff:colm '*)
+                     (ensure-column (or colspec table)))))
+    (apply #'clsql:sql-query
+           `(,columns :from ,(ensure-table table) ,@(when where (list :where where))))))
+
 (defun %build-liql-query (normalized-liql)
   (labels ((proc (liql database table/col query input)
              (if liql
@@ -73,29 +86,18 @@
                     (proc (cddr liql) database nil nil (second liql)))
                    (:designator
                     (if table/col
-                        (error "Not implemented1")
+                        (if (same-table-p table/col (second liql))
+                            (proc (cddr liql) database nil
+                                  (%add-table-to-query-chain table/col (second liql)
+                                                             query input) nil)
+                            (proc (cddr liql) database (second liql)
+                                  (%add-table-to-query-chain table/col nil query input) nil))
                         (let ((desg (get-table-or-column-object (second liql))))
                           (proc (cddr liql) database desg nil input))))
                    (otherwise (error "Not implemented2")))
                  ;; Process endstate:
                  (if table/col
-                     (if query
-                         (error "Not implemented3")
-                         (if input
-                             (lambda ()
-                               (clsql:select
-                                (if *fetch-column-only*
-                                    (ensure-column table/col)
-                                    (sql-stuff:colm '*))
-                                :from (ensure-table table/col)
-                                :where
-                                (sql-stuff:in-or-equal (ensure-column table/col) input)))
-                             (lambda ()
-                               (clsql:select
-                                (if *fetch-column-only*
-                                    (ensure-column table/col)
-                                    (sql-stuff:colm '*))
-                                :from (ensure-table table/col)))))
+                     (%add-table-to-query-chain table/col nil query input :final t)
                      (error "Not implemented4")))))
     (proc normalized-liql (get-current-database) nil nil nil)))
 
@@ -112,7 +114,7 @@
       (summarize-database (get-current-database))))
 
 (defun summarize-query (query)
-  (multiple-value-bind (results cols) (funcall query)
+  (multiple-value-bind (results cols) (clsql:query query)
     (let ((display (ascii-table:make-table cols)))
       (if (>= 10 (length results))
           (dolist (row results)
@@ -186,3 +188,6 @@
   (if (eq 'clsql-sys:sql-ident-table (type-of t-or-c))
       t-or-c
       (sql-stuff:tabl (sql-stuff:table-symbol t-or-c))))
+
+(defun same-table-p (spec1 spec2)
+  (string-equal-caseless (sql-stuff:table-symbol spec1) (sql-stuff:table-symbol spec2)))
