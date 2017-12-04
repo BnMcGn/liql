@@ -88,8 +88,9 @@
                     (if table/col
                         (if (same-table-p table/col (second liql))
                             (proc (cddr liql) database nil
-                                  (%add-table-to-query-chain table/col (second liql)
-                                                             query input) nil)
+                                  (%add-table-to-query-chain
+                                   table/col (get-table-or-column-object (second liql))
+                                   query input) nil)
                             (proc (cddr liql) database (second liql)
                                   (%add-table-to-query-chain table/col nil query input) nil))
                         (let ((desg (get-table-or-column-object (second liql))))
@@ -98,7 +99,8 @@
                  ;; Process endstate:
                  (if table/col
                      (%add-table-to-query-chain table/col nil query input :final t)
-                     (error "Not implemented4")))))
+                     (or query
+                         (error "Not implemented4"))))))
     (proc normalized-liql (get-current-database) nil nil nil)))
 
 (defmacro liql (&rest specifiers)
@@ -158,7 +160,7 @@
           (when-let ((table (first-match
                              (lambda (x) (string-equal-caseless x item))
                              (clsql-sys:database-list-tables (get-current-database)))))
-            (sql-stuff:colm table))
+            (sql-stuff:tabl (symb table)))
           (let ((cols
                  (collecting
                      (dolist (tname (clsql-sys:database-list-tables (get-current-database)))
