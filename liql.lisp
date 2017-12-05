@@ -61,7 +61,9 @@
 
 (defun %%parse-liql (specifiers)
   `(funcall (or *liql-finisher* (symbol-function 'summarize-core))
-            (%build-liql-query (list ,@(%%normalize-liql specifiers)))))
+            ,(if specifiers
+                 `(%build-liql-query (list ,@(%%normalize-liql specifiers)))
+                 nil)))
 
 (defun %add-table-to-query-chain (table colspec query input &key final)
   (and query input (error "Query and input parameters should not both be set."))
