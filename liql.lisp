@@ -119,8 +119,9 @@
 
 (defun summarize-query (query)
   (multiple-value-bind (results cols) (clsql:query query)
-    (let ((display (ascii-table:make-table cols)))
-      (if (>= 10 (length results))
+    (let ((display (ascii-table:make-table cols))
+          (count (length results)))
+      (if (>= 10 count)
           (dolist (row results)
             (ascii-table:add-row display row))
           (progn
@@ -132,7 +133,7 @@
              (mapcar (lambda (x) (declare (ignore x)) "...") cols))
             (dolist (row (last results 3))
               (ascii-table:add-row display row))))
-      (princ "Results:")
+      (format t "Results (~a rows):" count)
       (terpri)
       (ascii-table:display display))))
 
