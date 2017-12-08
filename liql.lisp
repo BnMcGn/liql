@@ -30,6 +30,54 @@
 
 (defparameter *fetch-column-only* nil)
 
+(define-condition ambiguous-symbol (error)
+  ((options :initarg :options :reader options)
+   (text :initarg :text :reader text)))
+
+(defun splittable (symbol)
+  (let ((res (split-sequence:split-sequence #\. (mkstr symbol))))
+    (when (< 1 (length res))
+      (sql-stuff:colm (intern (car res) 'keyword) (intern (second res) 'keyword)))))
+
+(defun get-table-or-column-object (item)
+  (if (or (stringp item) (symbolp item))
+      (or (splittable item)
+          (when-let ((table (first-match
+                             (lambda (x) (string-equal-caseless x item))
+                             (clsql-sys:database-list-tables (get-current-database)))))
+            (sql-stuff:tabl (symb table)))
+          (let ((cols
+                 (collecting
+                     (dolist (tname (clsql-sys:database-list-tables (get-current-database)))
+                       (dolist (cname (sql-stuff:get-table-columns tname))
+                         (when (string-equal-caseless cname item)
+                           (collect (cons tname cname))))))))
+            (if (< 1 (length cols))
+                (error 'ambiguous-symbol :text "Multiple matching columns found"
+                       :options cols)
+                (sql-stuff:colm (caar cols) (cdar cols))))
+          (error "No matching database item found"))
+      item))
+
+(defun column-p (t-or-c)
+  (eq 'clsql-sys:sql-ident-table (type-of t-or-c)))
+
+(defun ensure-column (t-or-c)
+  "Returns an ident attribute that contains a table and a column. Given just a table, will fill with the table's pkey."
+  (if (eq 'clsql-sys:sql-ident-table (type-of t-or-c))
+      (multiple-value-bind (pkey sig) (sql-stuff:get-table-pkey t-or-c)
+        (unless sig
+          (error "Couldn't get PKey column for table specifier"))
+        (sql-stuff:colm (sql-stuff:table-symbol t-or-c) (intern pkey 'keyword)))
+      t-or-c))
+
+(defun ensure-table (t-or-c)
+  (if (eq 'clsql-sys:sql-ident-table (type-of t-or-c))
+      t-or-c
+      (sql-stuff:tabl (sql-stuff:table-symbol t-or-c))))
+
+(defun same-table-p (spec1 spec2)
+  (string-equal-caseless (sql-stuff:table-symbol spec1) (sql-stuff:table-symbol spec2)))
 
 (defun get-current-database ()
   "Currently, this function returns a clsql database object."
@@ -148,51 +196,3 @@
 ;;FIXME: mechanism for listing all dbs not available yet
 (defun summarize-all ())
 
-(define-condition ambiguous-symbol (error)
-  ((options :initarg :options :reader options)
-   (text :initarg :text :reader text)))
-
-(defun splittable (symbol)
-  (let ((res (split-sequence:split-sequence #\. (mkstr symbol))))
-    (when (< 1 (length res))
-      (sql-stuff:colm (intern (car res) 'keyword) (intern (second res) 'keyword)))))
-
-(defun get-table-or-column-object (item)
-  (if (or (stringp item) (symbolp item))
-      (or (splittable item)
-          (when-let ((table (first-match
-                             (lambda (x) (string-equal-caseless x item))
-                             (clsql-sys:database-list-tables (get-current-database)))))
-            (sql-stuff:tabl (symb table)))
-          (let ((cols
-                 (collecting
-                     (dolist (tname (clsql-sys:database-list-tables (get-current-database)))
-                       (dolist (cname (sql-stuff:get-table-columns tname))
-                         (when (string-equal-caseless cname item)
-                           (collect (cons tname cname))))))))
-            (if (< 1 (length cols))
-                (error 'ambiguous-symbol :text "Multiple matching columns found"
-                       :options cols)
-                (sql-stuff:colm (caar cols) (cdar cols))))
-          (error "No matching database item found"))
-      item))
-
-(defun column-p (t-or-c)
-  (eq 'clsql-sys:sql-ident-table (type-of t-or-c)))
-
-(defun ensure-column (t-or-c)
-  "Returns an ident attribute that contains a table and a column. Given just a table, will fill with the table's pkey."
-  (if (eq 'clsql-sys:sql-ident-table (type-of t-or-c))
-      (multiple-value-bind (pkey sig) (sql-stuff:get-table-pkey t-or-c)
-        (unless sig
-          (error "Couldn't get PKey column for table specifier"))
-        (sql-stuff:colm (sql-stuff:table-symbol t-or-c) (intern pkey 'keyword)))
-      t-or-c))
-
-(defun ensure-table (t-or-c)
-  (if (eq 'clsql-sys:sql-ident-table (type-of t-or-c))
-      t-or-c
-      (sql-stuff:tabl (sql-stuff:table-symbol t-or-c))))
-
-(defun same-table-p (spec1 spec2)
-  (string-equal-caseless (sql-stuff:table-symbol spec1) (sql-stuff:table-symbol spec2)))
