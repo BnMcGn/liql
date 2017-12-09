@@ -34,6 +34,9 @@
   ((options :initarg :options :reader options)
    (text :initarg :text :reader text)))
 
+(define-condition record-not-found (error)
+  ())
+
 (defun splittable (symbol)
   (let ((res (split-sequence:split-sequence #\. (mkstr symbol))))
     (when (< 1 (length res))
@@ -196,3 +199,31 @@
 ;;FIXME: mechanism for listing all dbs not available yet
 (defun summarize-all ())
 
+(defparameter *handle-empty-series* nil)
+(defparameter *handle-empty* :error)
+
+(eval-always
+  (defmacro define-finisher (name funcname series)
+    `(defmacro ,name (&body kwds-and-body)
+       (let ((fail ,(if series '*handle-empty-series* '*handle-empty*))
+             (fname ',funcname)
+             (body kwds-and-body))
+         (when (eq :fail (car kwds-and-body))
+           (setf fail (second kwds-and-body))
+           (setf body (cddr kwds-and-body)))
+         `(let
+              ((*liql-finisher*
+                (lambda (query)
+                  (multiple-value-bind (results cols) (clsql:query query)
+                    (if results
+                        (,fname results cols)
+                        (if (eq :error ,fail)
+                            (error 'record-not-found)
+                            ,fail))))))
+            ,@body)))))
+
+(defun %grab-one (results cols)
+  (declare (ignore cols))
+  (caar results))
+
+(define-finisher grab-one %grab-one nil)
