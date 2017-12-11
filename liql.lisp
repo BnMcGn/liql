@@ -203,16 +203,18 @@
 (defparameter *handle-empty* :error)
 
 (eval-always
-  (defmacro define-finisher (name funcname series)
+  (defmacro define-finisher (name funcname series &optional (columnar *fetch-column-only*))
     `(defmacro ,name (&body kwds-and-body)
        (let ((fail ,(if series '*handle-empty-series* '*handle-empty*))
              (fname ',funcname)
+             (clum ,columnar)
              (body kwds-and-body))
          (when (eq :fail (car kwds-and-body))
            (setf fail (second kwds-and-body))
            (setf body (cddr kwds-and-body)))
          `(let
-              ((*liql-finisher*
+              ((*fetch-column-only* ,clum)
+               (*liql-finisher*
                 (lambda (query)
                   (multiple-value-bind (results cols) (clsql:query query)
                     (if results
@@ -227,3 +229,36 @@
   (caar results))
 
 (define-finisher grab-one %grab-one nil)
+
+(defun %grab-column (results cols)
+  (declare (ignore cols))
+  (mapcar #'car results))
+
+(define-finisher grab-column %grab-column t t)
+
+(defun %grab-records (results cols)
+  (declare (ignore cols))
+  results)
+
+(define-finisher grab-records %grab-records t)
+
+(defun %grab-record (results cols)
+  (declare (ignore cols))
+  (car results))
+
+(define-finisher grab-record %grab-record nil)
+
+(defun %grab-plist (results cols)
+  (hu:alist->plist (car (sql-stuff:assocify-results (list (car results)) cols))))
+
+(define-finisher grab-plist %grab-plist nil)
+
+(defun %grab-hash-table (results cols)
+  (hu:alist->hash (car (sql-stuff:assocify-results (list (car results)) cols))))
+
+(define-finisher grab-hash-table %grab-hash-table nil)
+
+(defun %grab-alist (results cols)
+  (car (sql-stuff:assocify-results (list (car results)) cols)))
+
+(define-finisher grab-alist %grab-alist nil)
