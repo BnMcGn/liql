@@ -107,13 +107,25 @@
                          (cons (%%normalize-liql-function (car sp) (cdr sp)) results)))
       (t (error "Don't handle that yet!")))))
 
+(defun %flag-selects-in-normalized-liql (liql)
+  (collecting
+      ;;Step through the liql plist, converting :designator keys to :select if the
+      ;;previous key was also a designator.
+      (do-window ((prek prev k v) liql :size 4 :step 2 :start-padding (list nil nil))
+        (declare (ignore prev))
+        (if (and (eq k :designator) (eq prek :designator))
+            (progn (collect :select) (collect v))
+            (progn (collect k) (collect v))))))
+
 (defun %%normalize-liql-keyword (kw remainder) (error "Not implemented"))
 (defun %%normalize-liql-function (name data) (error "Not implemented"))
 
 (defun %%parse-liql (specifiers)
   `(funcall (or *liql-finisher* (symbol-function 'summarize-core))
             ,(if specifiers
-                 `(%build-liql-query (list ,@(%%normalize-liql specifiers)))
+                 `(%build-liql-query
+                   (%flag-selects-in-normalized-liql
+                    (list ,@(%%normalize-liql specifiers))))
                  nil)))
 
 (defun %add-table-to-query-chain (table colspec query input &key final)
@@ -225,26 +237,22 @@
             ,@body)))))
 
 (defun %grab-one (results cols)
-  (declare (ignore cols))
-  (caar results))
+  (values (caar results) (car cols)))
 
 (define-finisher grab-one %grab-one nil)
 
 (defun %grab-column (results cols)
-  (declare (ignore cols))
-  (mapcar #'car results))
+  (values (mapcar #'car results) (car cols)))
 
 (define-finisher grab-column %grab-column t t)
 
 (defun %grab-records (results cols)
-  (declare (ignore cols))
-  results)
+  (values results cols))
 
 (define-finisher grab-records %grab-records t)
 
 (defun %grab-record (results cols)
-  (declare (ignore cols))
-  (car results))
+  (values (car results) cols))
 
 (define-finisher grab-record %grab-record nil)
 
