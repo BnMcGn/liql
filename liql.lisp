@@ -149,19 +149,6 @@
     (apply #'clsql:sql-query
            `(,columns :from ,(ensure-table table) ,@(when where (list :where where))))))
 
-(defun %add-table-to-query-chain (table colspec query input &key final)
-  (and query input (error "Query and input parameters should not both be set."))
-  (let ((where
-         (cond
-           (query (clsql:sql-in (ensure-column table) query))
-           (input (sql-stuff:in-or-equal (ensure-column table) input))
-           (t nil)))
-        (columns (if (and final (not *fetch-column-only*))
-                     (sql-stuff:colm '*)
-                     (ensure-column (or colspec table)))))
-    (apply #'clsql:sql-query
-           `(,columns :from ,(ensure-table table) ,@(when where (list :where where))))))
-
 (defun %build-liql-query (normalized-liql)
   (labels
       ((proc (liql database table/col input input-type wherestack)
@@ -176,58 +163,35 @@
                   (error "Attempted to add input before previous input designated."))
                 (proc (cddr liql) database table/col (second liql) :like wherestack))
                (:designator
-                (if table/col
-                    (if (same-table-p table/col (second liql))
-                        (if input
-                            (proc (cddr liql) database (second liql)
-                                  nil nil
-                                  (cons (%process-input input input-type (second liql))
-                                        wherestack))
-                            (error "Designator without input!"))
-                        (proc ;;Last designator was also a :select!
-                         (cddr liql) database (second liql)
-                         (%add-table-to-query-chain table/col wherestack) :query nil))
-                    (if input
-                        (proc (cddr liql) database (second liql)
-                              nil nil
-                              (cons (%process-input input input-type (second liql))))
-                        (error "Designator without input!"))))
+                (let ((desg (get-table-or-column-object (second liql))))
+                  (if table/col
+                      (if (same-table-p table/col (second liql))
+                          (if input
+                              (proc (cddr liql) database (second liql)
+                                    nil nil
+                                    (cons (%process-input input input-type desg)
+                                          wherestack))
+                             (error "Designator without input!"))
+                         (proc ;;Last designator was also a :select!
+                          (cddr liql) database (second liql)
+                          (%add-table-to-query-chain table/col wherestack) :query nil))
+                     (if input
+                         (proc (cddr liql) database desg nil nil
+                               (cons (%process-input input input-type desg)
+                                     wherestack))
+                         (error "Designator without input!")))))
                (:select
                 (proc (cddr liql) database nil
-                      (%add-table-to-query-chain (second liql) wherestack)
+                      (%add-table-to-query-chain
+                       (get-table-or-column-object (second liql)) wherestack)
                       :query nil))
                (otherwise (error "Not implemented")))
              (if (and wherestack table/col)
                  (%add-table-to-query-chain table/col wherestack :final t)
-                 (error "Invalid end state")))))
-    (proc normalized-liql (get-current-database) nil nil nil)))
-
-(defun %build-liql-query (normalized-liql)
-  (labels ((proc (liql database table/col query input)
-             (if liql
-                 (case (car liql)
-                   (:input
-                    (when (or table/col query input)
-                      (error "Input should be first in chain!")) ;Might have meaning later?
-                    (proc (cddr liql) database nil nil (second liql)))
-                   (:designator
-                    (if table/col
-                        (if (same-table-p table/col (second liql))
-                            (proc (cddr liql) database nil
-                                  (%add-table-to-query-chain
-                                   table/col (get-table-or-column-object (second liql))
-                                   query input) nil)
-                            (proc (cddr liql) database (second liql)
-                                  (%add-table-to-query-chain table/col nil query input) nil))
-                        (let ((desg (get-table-or-column-object (second liql))))
-                          (proc (cddr liql) database desg nil input))))
-                   (otherwise (error "Not implemented2")))
-                 ;; Process endstate:
-                 (if table/col
-                     (%add-table-to-query-chain table/col nil query input :final t)
-                     (or query
-                         (error "Not implemented4"))))))
-    (proc normalized-liql (get-current-database) nil nil nil)))
+                 (if (eq :query input-type)
+                     input
+                     (error "Invalid end state"))))))
+     (proc normalized-liql (get-current-database) nil nil nil nil)))
 
 (defmacro liql (&rest specifiers)
   (%%parse-liql specifiers))
