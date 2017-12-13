@@ -183,7 +183,8 @@
                (:select
                 (proc (cddr liql) database nil
                       (%add-table-to-query-chain
-                       (get-table-or-column-object (second liql)) wherestack)
+                       (get-table-or-column-object (second liql)) wherestack
+                       :final (not (cddr liql)))
                       :query nil))
                (otherwise (error "Not implemented")))
              (if (and wherestack table/col)
