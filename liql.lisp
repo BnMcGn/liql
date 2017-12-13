@@ -91,7 +91,8 @@
   "Normalize-liql is the preprocessor for liql. It should return a plist."
   (let ((sp (car specifiers)))
     (cond
-      ((null sp) (nreverse results))
+      ((null specifiers) (nreverse results))
+      ((null sp) (error "NIL is not a legal liql specifier."))
       ((keywordp sp)
        (multiple-value-bind (kw clause remainder)
            (%%normalize-liql-keyword sp (cdr specifiers))
@@ -113,7 +114,8 @@
       ;;previous key was also a designator.
       (do-window ((prek prev k v) liql :size 4 :step 2 :start-padding (list nil nil))
         (declare (ignore prev))
-        (if (and (eq k :designator) (eq prek :designator))
+        (if (or (and (eq k :designator) (eq prek :designator))
+                (and (eq k :designator) (null prek))) ;designator at beginning.
             (progn (collect :select) (collect v))
             (progn (collect k) (collect v))))))
 
@@ -128,11 +130,30 @@
                     (list ,@(%%normalize-liql specifiers))))
                  nil)))
 
+(defun %process-input (input type table/col)
+  (case type
+    (:query (clsql:sql-in (ensure-column table/col) input))
+    (:input (sql-stuff:in-or-equal (ensure-column table/col) input))
+    ;;FIXME: like doesn't handle multiple input?
+    (:like (clsql:sql-like (ensure-column table/col) input))))
+
+(defun %add-table-to-query-chain (table wheres &key final)
+  (let ((where
+         (when wheres
+           (if (< 1 (length wheres))
+               (apply #'clsql:sql-and wheres)
+               wheres)))
+        (columns (if (and final (not *fetch-column-only*))
+                     (sql-stuff:colm '*)
+                     (ensure-column table))))
+    (apply #'clsql:sql-query
+           `(,columns :from ,(ensure-table table) ,@(when where (list :where where))))))
+
 (defun %add-table-to-query-chain (table colspec query input &key final)
   (and query input (error "Query and input parameters should not both be set."))
   (let ((where
          (cond
-           (query (clsql:sql-in query))
+           (query (clsql:sql-in (ensure-column table) query))
            (input (sql-stuff:in-or-equal (ensure-column table) input))
            (t nil)))
         (columns (if (and final (not *fetch-column-only*))
@@ -140,6 +161,46 @@
                      (ensure-column (or colspec table)))))
     (apply #'clsql:sql-query
            `(,columns :from ,(ensure-table table) ,@(when where (list :where where))))))
+
+(defun %build-liql-query (normalized-liql)
+  (labels
+      ((proc (liql database table/col input input-type wherestack)
+         (if liql
+             (case (car liql)
+               (:input
+                (when input
+                  (error "Attempted to add input before previous input designated."))
+                (proc (cddr liql) database table/col (second liql) :input wherestack))
+               (:like
+                (when input
+                  (error "Attempted to add input before previous input designated."))
+                (proc (cddr liql) database table/col (second liql) :like wherestack))
+               (:designator
+                (if table/col
+                    (if (same-table-p table/col (second liql))
+                        (if input
+                            (proc (cddr liql) database (second liql)
+                                  nil nil
+                                  (cons (%process-input input input-type (second liql))
+                                        wherestack))
+                            (error "Designator without input!"))
+                        (proc ;;Last designator was also a :select!
+                         (cddr liql) database (second liql)
+                         (%add-table-to-query-chain table/col wherestack) :query nil))
+                    (if input
+                        (proc (cddr liql) database (second liql)
+                              nil nil
+                              (cons (%process-input input input-type (second liql))))
+                        (error "Designator without input!"))))
+               (:select
+                (proc (cddr liql) database nil
+                      (%add-table-to-query-chain (second liql) wherestack)
+                      :query nil))
+               (otherwise (error "Not implemented")))
+             (if (and wherestack table/col)
+                 (%add-table-to-query-chain table/col wherestack :final t)
+                 (error "Invalid end state")))))
+    (proc normalized-liql (get-current-database) nil nil nil)))
 
 (defun %build-liql-query (normalized-liql)
   (labels ((proc (liql database table/col query input)
