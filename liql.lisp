@@ -119,7 +119,11 @@
             (progn (collect :select) (collect v))
             (progn (collect k) (collect v))))))
 
-(defun %%normalize-liql-keyword (kw remainder) (error "Not implemented"))
+(defun %%normalize-liql-keyword (kw remainder)
+  (if (member kw '(:like :input))
+      (values kw (car remainder) (cdr remainder))
+      (error "Not implemented")))
+
 (defun %%normalize-liql-function (name data) (error "Not implemented"))
 
 (defun %%parse-liql (specifiers)
