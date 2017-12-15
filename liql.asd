@@ -1,9 +1,9 @@
 ;;;; liql.asd
 
 (asdf:defsystem #:liql
-  :description "Describe liql here"
-  :author "Your Name <your.name@example.com>"
-  :license "Specify license here"
+  :description "Liql is a DSL for generating SQL queries."
+  :author "Ben McGunigle <bnmcgn@gmail.com>"
+  :license "Apache License, version 2.0"
   :depends-on (#:gadgets
                #:cl-hash-util
                #:sql-stuff
