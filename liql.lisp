@@ -28,7 +28,7 @@
     *last-column* nil
   "Bookmark of the last referenced column.")
 
-(defparameter *fetch-column-only* nil)
+(eval-always (defparameter *fetch-column-only* nil))
 
 (define-condition ambiguous-symbol (error)
   ((options :initarg :options :reader options)
