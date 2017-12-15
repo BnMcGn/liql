@@ -109,15 +109,17 @@
       (t (error "Don't handle that yet!")))))
 
 (defun %flag-selects-in-normalized-liql (liql)
-  (collecting
-      ;;Step through the liql plist, converting :designator keys to :select if the
-      ;;previous key was also a designator.
-      (do-window ((prek prev k v) liql :size 4 :step 2 :start-padding (list nil nil))
-        (declare (ignore prev))
-        (if (or (and (eq k :designator) (eq prek :designator))
-                (and (eq k :designator) (null prek))) ;designator at beginning.
-            (progn (collect :select) (collect v))
-            (progn (collect k) (collect v))))))
+  (let ((res nil))
+    ;;Step through the liql plist, converting :designator keys to :select if the
+    ;;previous key was also a designator.
+    (do-window ((prek prev k v) liql :size 4 :step 2 :start-padding (list nil nil))
+      (declare (ignore prev))
+      (if (or (and (eq k :designator) (eq prek :designator)
+                   (not (eq :select (second res))))
+              (and (eq k :designator) (null prek))) ;designator at beginning.
+          (progn (push :select res) (push v res))
+          (progn (push k res) (push v res))))
+    (nreverse res)))
 
 (defun %%normalize-liql-keyword (kw remainder)
   (if (member kw '(:like :input))
