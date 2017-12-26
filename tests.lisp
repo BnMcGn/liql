@@ -13,5 +13,12 @@
 (ok (integerp (grab-one (liql 'opinion.author 'opinion))))
 (ok (stringp (getf (grab-plist (liql 'author)) :value)))
 
+;;And clause
+
+(is (grab-one (liql '(4 5 6) 'opinion '(6 7 8) 'opinion 'opinion.id)) 6)
+(is (grab-one (liql '(4 5 6) 'opinion '(6 7 8) 'opinion)) 6)
+(is (grab-one (liql '(4 5 6) 'opinion '(6 7 8) 'opinion.id)) 6)
+(is (grab-column (liql '(4 5 6) 'opinion '(6 7 8) 'opinion)) '(6))
+
 (finalize)
 
