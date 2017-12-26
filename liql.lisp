@@ -80,7 +80,8 @@
       (sql-stuff:tabl (sql-stuff:table-symbol t-or-c))))
 
 (defun same-table-p (spec1 spec2)
-  (string-equal-caseless (sql-stuff:table-symbol spec1) (sql-stuff:table-symbol spec2)))
+  (string-equal-caseless (sql-stuff:table-symbol spec1)
+                         (sql-stuff:table-symbol (get-table-or-column-object spec2))))
 
 (defun get-current-database ()
   "Currently, this function returns a clsql database object."
@@ -302,3 +303,7 @@
   (car (sql-stuff:assocify-results (list (car results)) cols)))
 
 (define-finisher grab-alist %grab-alist nil)
+
+(defmacro grab-query (&body body)
+  `(let ((*liql-finisher* (lambda (query) query)))
+     ,@body))
