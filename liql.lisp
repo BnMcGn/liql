@@ -105,8 +105,11 @@
        (%%normalize-liql (cdr specifiers)
                          (list* sp :input results)))
       ((listp sp)
-       (%%normalize-liql (cdr specifiers)
-                         (cons (%%normalize-liql-function (car sp) (cdr sp)) results)))
+       (multiple-value-bind (keyword value) (%%normalize-liql-function sp (cdr specifiers))
+         (%%normalize-liql (cdr specifiers)
+                           (if keyword
+                               (list* value keyword results)
+                               (cons value results)))))
       (t (error "Don't handle that yet!")))))
 
 (defun %flag-selects-in-normalized-liql (liql)
@@ -127,7 +130,9 @@
       (values kw (car remainder) (cdr remainder))
       (error "Not implemented")))
 
-(defun %%normalize-liql-function (name data) (error "Not implemented"))
+(defun %%normalize-liql-function (clause rest)
+  (declare (ignore rest))
+  (values :input clause))
 
 (defun %%parse-liql (specifiers)
   `(funcall (or *liql-finisher* (symbol-function 'summarize-core))

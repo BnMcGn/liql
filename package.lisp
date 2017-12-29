@@ -12,5 +12,6 @@
    #:grab-record
    #:grab-plist
    #:grab-hash-table
-   #:grab-alist))
+   #:grab-alist
+   #:grab-query))
 
