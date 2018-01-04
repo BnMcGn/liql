@@ -130,6 +130,7 @@
       (values kw (car remainder) (cdr remainder))
       (error "Not implemented")))
 
+;;FIXME: allows all lisp code as input. Maybe should be wrapped in (lisp ...)?
 (defun %%normalize-liql-function (clause rest)
   (declare (ignore rest))
   (values :input clause))
@@ -277,7 +278,7 @@
 (defun %grab-one (results cols)
   (values (caar results) (car cols)))
 
-(define-finisher grab-one %grab-one nil)
+(define-finisher grab-one %grab-one nil t)
 
 (defun %grab-column (results cols)
   (values (mapcar #'car results) (car cols)))
