@@ -46,14 +46,14 @@
   (if (or (stringp item) (symbolp item))
       (or (splittable item)
           (when-let ((table (first-match
-                             (lambda (x) (string-equal-caseless x item))
+                             (lambda (x) (string-equal x item))
                              (clsql-sys:database-list-tables (get-current-database)))))
             (sql-stuff:tabl (symb table)))
           (let ((cols
                  (collecting
                      (dolist (tname (clsql-sys:database-list-tables (get-current-database)))
                        (dolist (cname (sql-stuff:get-table-columns tname))
-                         (when (string-equal-caseless cname item)
+                         (when (string-equal cname item)
                            (collect (cons tname cname))))))))
             (if (< 1 (length cols))
                 (error 'ambiguous-symbol :text "Multiple matching columns found"
@@ -80,7 +80,7 @@
       (sql-stuff:tabl (sql-stuff:table-symbol t-or-c))))
 
 (defun same-table-p (spec1 spec2)
-  (string-equal-caseless (sql-stuff:table-symbol spec1)
+  (string-equal (sql-stuff:table-symbol spec1)
                          (sql-stuff:table-symbol (get-table-or-column-object spec2))))
 
 (defun get-current-database ()
